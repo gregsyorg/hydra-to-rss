@@ -14,7 +14,6 @@ from urllib.parse import urlparse
 from xml.sax.saxutils import escape
 
 OUTPUT_FILE = "feed.xml"
-USER_AGENT = "json-to-rss/1.0"
 
 JSON_URLS = [
     "https://hydralinks.cloud/sources/onlinefix.json",
@@ -25,7 +24,14 @@ JSON_URLS = [
 
 
 def fetch_json(url):
-    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    # Simulamos ser un navegador real para saltar el bloqueo 403 Forbidden
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/javascript, */*; q=0.01",
+        "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
+        "Referer": "https://hydralinks.cloud/",
+    }
+    req = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(req, timeout=30) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
