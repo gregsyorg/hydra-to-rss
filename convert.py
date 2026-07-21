@@ -3,14 +3,23 @@ import urllib.request
 from xml.etree.ElementTree import Element, SubElement, tostring
 from xml.dom import minidom
 
-# Lista con todas las fuentes JSON de Hydra que quieras incluir
+# Lista de fuentes JSON de Hydra
 JSON_URLS = [
     "https://hydralinks.cloud/sources/onlinefix.json",
     "https://hydralinks.cloud/sources/fitgirl.json",
     "https://hydralinks.cloud/sources/dodi.json",
     "https://hydralinks.cloud/sources/xatab.json"
-    # Añade aquí todas las URLs que quieras entre comillas y separadas por comas
 ]
+
+def get_json_data(url):
+    """Realiza la petición HTTP simulando un navegador real para evitar bloqueos Cloudflare/403."""
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'application/json, text/plain, */*'
+    }
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req, timeout=15) as response:
+        return json.loads(response.read().decode('utf-8'))
 
 def main():
     rss = Element('rss', version='2.0')
@@ -24,38 +33,52 @@ def main():
 
     for url in JSON_URLS:
         try:
-            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req) as response:
-                data = json.loads(response.read().decode())
+            data = get_json_data(url)
+            source_name = data.get('name', 'Hydra Source')
 
-            source_name = data.get('name', 'Fuente')
+            # Manejar tanto la estructura 'downloads' como si viniera directamente una lista
+            downloads = data.get('downloads', []) if isinstance(data, dict) else data
 
-            for item in data.get('downloads', []):
-                uris = item.get('uris', [])
-                if not uris:
+            for item in downloads:
+                if not isinstance(item, dict):
                     continue
-                
+
+                # Extraer URIs o magnets directos
+                uris = item.get('uris', [])
+                magnet = None
+
+                if uris and len(uris) > 0:
+                    magnet = uris[0]
+                elif 'magnet' in item:
+                    magnet = item['magnet']
+                elif 'url' in item and str(item['url']).startswith('magnet:'):
+                    magnet = item['url']
+
+                if not magnet or not str(magnet).startswith('magnet:'):
+                    continue
+
                 rss_item = SubElement(channel, 'item')
-                # Añadimos el nombre de la fuente al título para identificarlo fácil
-                item_title = f"[{source_name}] {item.get('title', 'Sin titulo')}"
+                title_text = f"[{source_name}] {item.get('title', item.get('name', 'Sin titulo'))}"
                 
-                SubElement(rss_item, 'title').text = item_title
-                SubElement(rss_item, 'enclosure', url=uris[0], type='application/x-bittorrent')
+                SubElement(rss_item, 'title').text = title_text
+                SubElement(rss_item, 'enclosure', url=str(magnet), type='application/x-bittorrent')
                 
-                if 'uploadDate' in item:
-                    SubElement(rss_item, 'pubDate').text = str(item['uploadDate'])
-                
+                # Intentar añadir fecha si existe
+                date_val = item.get('uploadDate', item.get('fileSize', None))
+                if date_val:
+                    SubElement(rss_item, 'pubDate').text = str(date_val)
+
                 total_items += 1
 
         except Exception as e:
             print(f"Error procesando la fuente {url}: {e}")
 
-    # Guardar el XML resultante
+    # Generar y guardar el XML
     xml_str = minidom.parseString(tostring(rss)).toprettyxml(indent="  ")
     with open("feed.xml", "w", encoding="utf-8") as f:
         f.write(xml_str)
         
-    print(f"XML generado con éxito. Total de elementos: {total_items}")
+    print(f"Proceso finalizado. Total de juegos agregados: {total_items}")
 
 if __name__ == "__main__":
     main()
