@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Genera un feed RSS 2.0 (feed.xml) a partir de fuentes JSON de HydraLinks
-utilizando los enlaces raw oficiales de GitHub para evitar bloqueos de Cloudflare.
+utilizando los endpoints oficiales de la API.
 """
 
 import json
@@ -13,19 +13,30 @@ from xml.sax.saxutils import escape
 
 OUTPUT_FILE = "feed.xml"
 
-# Cambiamos las URLs de la web protegida por Cloudflare a los enlaces raw oficiales de GitHub
+# Endpoints oficiales de las fuentes en la API de Hydra
 JSON_URLS = [
-    "https://raw.githubusercontent.com/hydralauncher/hydra-sources/main/sources/onlinefix.json",
-    "https://raw.githubusercontent.com/hydralauncher/hydra-sources/main/sources/fitgirl.json",
-    "https://raw.githubusercontent.com/hydralauncher/hydra-sources/main/sources/dodi.json",
-    "https://raw.githubusercontent.com/hydralauncher/hydra-sources/main/sources/xatab.json",
+    "https://hydralinks.cloud/sources/onlinefix.json",
+    "https://hydralinks.cloud/sources/fitgirl.json",
+    "https://hydralinks.cloud/sources/dodi.json",
+    "https://hydralinks.cloud/sources/xatab.json",
 ]
 
 
 def fetch_json(url):
-    req = urllib.request.Request(url, headers={"User-Agent": "json-to-rss/1.0"})
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    # Usamos cloudscraper si está disponible, o urllib estándar con headers de navegador
+    try:
+        import cloudscraper
+        scraper = cloudscraper.create_scraper(browser={'browser': 'chrome', 'platform': 'windows', 'desktop': True})
+        response = scraper.get(url, timeout=30)
+        response.raise_for_status()
+        return response.json()
+    except ImportError:
+        req = urllib.request.Request(
+            url, 
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read().decode("utf-8"))
 
 
 def to_rfc822(value):
