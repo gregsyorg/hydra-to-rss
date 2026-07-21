@@ -1,44 +1,32 @@
 #!/usr/bin/env python3
 """
-Genera un feed RSS 2.0 (feed.xml) a partir de fuentes JSON de HydraLinks.
-Usa 'cloudscraper' para evadir el bloqueo 403 (Cloudflare) en GitHub Actions.
+Genera un feed RSS 2.0 (feed.xml) a partir de fuentes JSON de HydraLinks
+utilizando los enlaces raw oficiales de GitHub para evitar bloqueos de Cloudflare.
 """
 
 import json
 import sys
+import urllib.request
 from datetime import datetime, timezone
 from email.utils import format_datetime, parsedate_to_datetime
 from xml.sax.saxutils import escape
 
-# Importamos la librería para saltar Cloudflare
-import cloudscraper
-
 OUTPUT_FILE = "feed.xml"
 
+# Cambiamos las URLs de la web protegida por Cloudflare a los enlaces raw oficiales de GitHub
 JSON_URLS = [
-    "https://hydralinks.cloud/sources/onlinefix.json",
-    "https://hydralinks.cloud/sources/fitgirl.json",
-    "https://hydralinks.cloud/sources/dodi.json",
-    "https://hydralinks.cloud/sources/xatab.json",
+    "https://raw.githubusercontent.com/hydralauncher/hydra-sources/main/sources/onlinefix.json",
+    "https://raw.githubusercontent.com/hydralauncher/hydra-sources/main/sources/fitgirl.json",
+    "https://raw.githubusercontent.com/hydralauncher/hydra-sources/main/sources/dodi.json",
+    "https://raw.githubusercontent.com/hydralauncher/hydra-sources/main/sources/xatab.json",
 ]
 
-# Inicializamos el scraper simulando ser Chrome en Windows
-scraper = cloudscraper.create_scraper(
-    browser={
-        'browser': 'chrome',
-        'platform': 'windows',
-        'desktop': True
-    }
-)
 
 def fetch_json(url):
-    try:
-        response = scraper.get(url, timeout=30)
-        response.raise_for_status()  # Lanza error si el status no es 200 OK
-        return response.json()
-    except Exception as e:
-        print(f"[aviso] no se pudo leer {url}: {e}", file=sys.stderr)
-        return None
+    req = urllib.request.Request(url, headers={"User-Agent": "json-to-rss/1.0"})
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
 
 def to_rfc822(value):
     if value is None:
@@ -57,6 +45,7 @@ def to_rfc822(value):
         return format_datetime(dt)
     except Exception:
         return format_datetime(datetime.now(timezone.utc))
+
 
 def extract_magnet(raw_item):
     candidates = (
@@ -81,6 +70,7 @@ def extract_magnet(raw_item):
                     return str(link)
     return None
 
+
 def build_item(raw):
     magnet = extract_magnet(raw)
     if not magnet:
@@ -100,11 +90,14 @@ def build_item(raw):
         "pubDate": date,
     }
 
+
 def collect_items(urls):
     items = []
     for url in urls:
-        data = fetch_json(url)
-        if not data:
+        try:
+            data = fetch_json(url)
+        except Exception as e:
+            print(f"[aviso] no se pudo leer {url}: {e}", file=sys.stderr)
             continue
 
         raw_items = []
@@ -120,6 +113,7 @@ def collect_items(urls):
                     items.append(item)
 
     return items
+
 
 def render_feed(items):
     now = format_datetime(datetime.now(timezone.utc))
@@ -145,16 +139,18 @@ def render_feed(items):
     parts += ["  </channel>", "</rss>", ""]
     return "\n".join(parts)
 
+
 def main():
     items = collect_items(JSON_URLS)
     
     if not items:
-        print("[aviso] No se encontraron items. Cloudflare podría seguir bloqueando o los JSON están vacíos.")
+        print("[aviso] No se encontraron items.")
     
     xml = render_feed(items)
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         f.write(xml)
     print(f"Escrito {OUTPUT_FILE} con {len(items)} entradas.")
+
 
 if __name__ == "__main__":
     main()
