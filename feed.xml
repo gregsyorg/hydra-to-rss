@@ -1,8 +1,9 @@
-<?xml version="1.0" ?>
+<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
   <channel>
-    <title>Hydra Multi-Source Feed</title>
-    <link>https://github.com</link>
-    <description>Feed RSS unificado para TorBox</description>
+    <title>HydraLinks Magnet RSS Feed</title>
+    <link>https://hydralinks.cloud/</link>
+    <description>Feed generado automáticamente con enlaces Magnet</description>
+    <lastBuildDate>Tue, 21 Jul 2026 22:30:55 +0000</lastBuildDate>
   </channel>
 </rss>
