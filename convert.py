@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Genera un feed RSS 2.0 (feed.xml) a partir de una o varias fuentes JSON.
-Toda la configuración vive en sources.json. Solo usa la librería estándar
-de Python, así que no hace falta instalar nada en GitHub Actions.
+Genera un feed RSS 2.0 (feed.xml) a partir de fuentes JSON de HydraLinks.
+Procesa directamente los enlaces magnet y genera el feed XML sin usar archivo de configuración.
+Solo usa la librería estándar de Python.
 """
 
 import json
@@ -13,33 +13,21 @@ from email.utils import format_datetime, parsedate_to_datetime
 from urllib.parse import urlparse
 from xml.sax.saxutils import escape
 
-CONFIG_FILE = "sources.json"
 OUTPUT_FILE = "feed.xml"
 USER_AGENT = "json-to-rss/1.0"
 
-
-def load_config(path):
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+JSON_URLS = [
+    "https://hydralinks.cloud/sources/onlinefix.json",
+    "https://hydralinks.cloud/sources/fitgirl.json",
+    "https://hydralinks.cloud/sources/dodi.json",
+    "https://hydralinks.cloud/sources/xatab.json",
+]
 
 
 def fetch_json(url):
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     with urllib.request.urlopen(req, timeout=30) as resp:
         return json.loads(resp.read().decode("utf-8"))
-
-
-def dig(obj, path):
-    """Navega un objeto con una ruta separada por puntos ('a.b.c'). '' devuelve obj."""
-    if not path:
-        return obj
-    cur = obj
-    for key in path.split("."):
-        if isinstance(cur, dict):
-            cur = cur.get(key)
-        else:
-            return None
-    return cur
 
 
 def to_rfc822(value):
@@ -62,67 +50,88 @@ def to_rfc822(value):
         return format_datetime(datetime.now(timezone.utc))
 
 
-def is_valid_link(url):
-    """Permite enlaces web (http/https) y enlaces de tipo magnet."""
-    if not url:
-        return False
-    try:
-        scheme = urlparse(str(url)).scheme.lower()
-        return scheme in ("http", "https", "magnet")
-    except Exception:
-        return False
+def extract_magnet(raw_item):
+    """Extrae la URL del magnet intentando con varios campos o listas habituales."""
+    # 1. Si es un string o lista dentro de uris/magnets/downloads
+    candidates = (
+        raw_item.get("uris")
+        or raw_item.get("magnets")
+        or raw_item.get("downloads")
+        or [raw_item.get("magnet")]
+        or [raw_item.get("link")]
+        or [raw_item.get("url")]
+    )
+
+    if isinstance(candidates, str):
+        candidates = [candidates]
+
+    if isinstance(candidates, list):
+        for candidate in candidates:
+            if isinstance(candidate, str) and candidate.startswith("magnet:"):
+                return candidate
+            elif isinstance(candidate, dict):
+                # Caso donde las uris son objetos con su propia propiedad url/link
+                link = candidate.get("url") or candidate.get("link") or candidate.get("uri")
+                if link and str(link).startswith("magnet:"):
+                    return str(link)
+
+    return None
 
 
-def build_item(raw, mapping):
-    link = dig(raw, mapping.get("link", "link"))
-    # Acepta enlaces http, https y magnet
-    if not is_valid_link(link):
+def build_item(raw):
+    magnet = extract_magnet(raw)
+    if not magnet:
         return None
-    title = dig(raw, mapping.get("title", "title"))
-    description = dig(raw, mapping.get("description", "")) or ""
-    guid = dig(raw, mapping.get("guid", "")) or link
-    date = to_rfc822(dig(raw, mapping.get("date", "")))
+
+    title = raw.get("title") or raw.get("name") or "Sin título"
+    description = raw.get("description") or raw.get("fileSize") or ""
+    guid = raw.get("guid") or raw.get("id") or magnet
+    date_val = raw.get("uploadDate") or raw.get("createdAt") or raw.get("date")
+    date = to_rfc822(date_val)
+
     return {
-        "title": str(title or "Sin título"),
-        "link": str(link),
+        "title": str(title),
+        "link": str(magnet),
         "description": str(description),
         "guid": str(guid),
         "pubDate": date,
     }
 
 
-def collect_items(config):
-    mapping = config.get("mapping", {})
-    items_path = mapping.get("items_path", "")
+def collect_items(urls):
     items = []
-    for url in config.get("sources", []):
+    for url in urls:
         try:
             data = fetch_json(url)
         except Exception as e:
             print(f"[aviso] no se pudo leer {url}: {e}", file=sys.stderr)
             continue
-        raw_items = dig(data, items_path)
-        if raw_items is None and isinstance(data, list):
+
+        # Extraer lista de elementos (puede estar bajo 'downloads', 'items' o ser la raíz)
+        raw_items = []
+        if isinstance(data, list):
             raw_items = data
-        if not isinstance(raw_items, list):
-            print(f"[aviso] '{items_path}' no es una lista en {url}", file=sys.stderr)
-            continue
+        elif isinstance(data, dict):
+            raw_items = data.get("downloads") or data.get("items") or data.get("results") or []
+
         for raw in raw_items:
-            item = build_item(raw, mapping)
-            if item:
-                items.append(item)
+            if isinstance(raw, dict):
+                item = build_item(raw)
+                if item:
+                    items.append(item)
+
     return items
 
 
-def render_feed(feed_meta, items):
+def render_feed(items):
     now = format_datetime(datetime.now(timezone.utc))
     parts = [
         '<?xml version="1.0" encoding="UTF-8"?>',
         '<rss version="2.0">',
         "  <channel>",
-        f"    <title>{escape(feed_meta.get('title', 'Feed'))}</title>",
-        f"    <link>{escape(feed_meta.get('link', ''))}</link>",
-        f"    <description>{escape(feed_meta.get('description', ''))}</description>",
+        "    <title>HydraLinks Magnet RSS Feed</title>",
+        "    <link>https://hydralinks.cloud/</link>",
+        "    <description>Feed generado automáticamente con enlaces Magnet</description>",
         f"    <lastBuildDate>{now}</lastBuildDate>",
     ]
     for it in items:
@@ -140,9 +149,8 @@ def render_feed(feed_meta, items):
 
 
 def main():
-    config = load_config(CONFIG_FILE)
-    items = collect_items(config)
-    xml = render_feed(config.get("feed", {}), items)
+    items = collect_items(JSON_URLS)
+    xml = render_feed(items)
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         f.write(xml)
     print(f"Escrito {OUTPUT_FILE} con {len(items)} entradas.")
