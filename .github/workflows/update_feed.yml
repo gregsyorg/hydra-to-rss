@@ -1,0 +1,32 @@
+name: Generate RSS Feed
+
+on:
+  schedule:
+    # Se ejecutará automáticamente cada 6 horas
+    - cron: '0 */6 * * *'
+  workflow_dispatch: # Permite ejecutarlo manualmente cuando quieras
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Run converter script
+        run: python convert.py
+
+      - name: Commit and push generated feed
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add feed.xml
+          git commit -m "Auto-update feed.xml" || exit 0
+          git push
