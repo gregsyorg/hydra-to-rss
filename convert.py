@@ -1,5 +1,6 @@
 import json
-import subprocess
+import urllib.request
+import ssl
 from xml.etree.ElementTree import Element, SubElement, tostring
 from xml.dom import minidom
 
@@ -11,26 +12,23 @@ JSON_URLS = [
     "https://hydralinks.cloud/sources/xatab.json"
 ]
 
-def get_json_data(url):
-    # Usar curl de Linux/GitHub Actions para bypass de Cloudflare 403
-    command = [
-        "curl",
-        "-s",
-        "-L",
-        "-A", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "-H", "Accept: application/json, text/plain, */*",
-        "-H", "Accept-Language: en-US,en;q=0.9",
-        "-H", "Sec-Fetch-Dest: empty",
-        "-H", "Sec-Fetch-Mode: cors",
-        "-H", "Sec-Fetch-Site: cross-site",
-        url
-    ]
+def get_json_data(target_url):
+    # Usar el proxy para evadir el bloqueo de IP de Cloudflare en GitHub Actions
+    proxy_url = f"https://api.allorigins.win/raw?url={urllib.parse.quote(target_url)}"
     
-    result = subprocess.run(command, capture_output=True, text=True, check=True)
-    if not result.stdout.strip():
-        raise Exception("Respuesta vacía al descargar JSON")
-        
-    return json.loads(result.stdout)
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': 'application/json, text/plain, */*'
+    }
+    
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+
+    req = urllib.request.Request(proxy_url, headers=headers)
+    with urllib.request.urlopen(req, context=ctx, timeout=30) as response:
+        content = response.read().decode('utf-8')
+        return json.loads(content)
 
 def main():
     rss = Element('rss', version='2.0')
