@@ -1,9 +1,11 @@
 import json
 import urllib.request
+import ssl
 from xml.etree.ElementTree import Element, SubElement, tostring
 from xml.dom import minidom
+from xml.sax.saxutils import escape
 
-# Lista de fuentes JSON de Hydra
+# Lista de fuentes JSON
 JSON_URLS = [
     "https://hydralinks.cloud/sources/onlinefix.json",
     "https://hydralinks.cloud/sources/fitgirl.json",
@@ -12,14 +14,21 @@ JSON_URLS = [
 ]
 
 def get_json_data(url):
-    """Realiza la petición HTTP simulando un navegador real para evitar bloqueos Cloudflare/403."""
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'application/json, text/plain, */*'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'en-US,en;q=0.9'
     }
+    
+    # Crear un contexto SSL que no verifique certificados estrictos si falla la cadena en GitHub Actions
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+
     req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req, timeout=15) as response:
-        return json.loads(response.read().decode('utf-8'))
+    with urllib.request.urlopen(req, context=ctx, timeout=20) as response:
+        content = response.read().decode('utf-8')
+        return json.loads(content)
 
 def main():
     rss = Element('rss', version='2.0')
@@ -33,52 +42,52 @@ def main():
 
     for url in JSON_URLS:
         try:
+            print(f"Descargando fuente: {url}")
             data = get_json_data(url)
-            source_name = data.get('name', 'Hydra Source')
+            source_name = data.get('name', 'Fuente')
 
-            # Manejar tanto la estructura 'downloads' como si viniera directamente una lista
             downloads = data.get('downloads', []) if isinstance(data, dict) else data
 
             for item in downloads:
                 if not isinstance(item, dict):
                     continue
 
-                # Extraer URIs o magnets directos
                 uris = item.get('uris', [])
-                magnet = None
+                if not uris or not isinstance(uris, list) or len(uris) == 0:
+                    continue
 
-                if uris and len(uris) > 0:
-                    magnet = uris[0]
-                elif 'magnet' in item:
-                    magnet = item['magnet']
-                elif 'url' in item and str(item['url']).startswith('magnet:'):
-                    magnet = item['url']
-
-                if not magnet or not str(magnet).startswith('magnet:'):
+                magnet_url = uris[0]
+                if not str(magnet_url).startswith('magnet:'):
                     continue
 
                 rss_item = SubElement(channel, 'item')
-                title_text = f"[{source_name}] {item.get('title', item.get('name', 'Sin titulo'))}"
+                
+                # Título limpio y escapado
+                raw_title = item.get('title', 'Sin titulo')
+                title_text = f"[{source_name}] {raw_title}"
                 
                 SubElement(rss_item, 'title').text = title_text
-                SubElement(rss_item, 'enclosure', url=str(magnet), type='application/x-bittorrent')
                 
-                # Intentar añadir fecha si existe
-                date_val = item.get('uploadDate', item.get('fileSize', None))
-                if date_val:
-                    SubElement(rss_item, 'pubDate').text = str(date_val)
+                # Enclosure con el magnet
+                SubElement(rss_item, 'enclosure', url=str(magnet_url), type='application/x-bittorrent')
+                
+                # Fecha
+                if 'uploadDate' in item:
+                    SubElement(rss_item, 'pubDate').text = str(item['uploadDate'])
 
                 total_items += 1
 
         except Exception as e:
-            print(f"Error procesando la fuente {url}: {e}")
+            print(f"Error procesando {url}: {e}")
 
-    # Generar y guardar el XML
-    xml_str = minidom.parseString(tostring(rss)).toprettyxml(indent="  ")
+    # Guardar resultado
+    xml_bytes = tostring(rss, encoding='utf-8')
+    parsed_xml = minidom.parseString(xml_bytes)
+    
     with open("feed.xml", "w", encoding="utf-8") as f:
-        f.write(xml_str)
+        f.write(parsed_xml.toprettyxml(indent="  "))
         
-    print(f"Proceso finalizado. Total de juegos agregados: {total_items}")
+    print(f"Finalizado. Total de items generados: {total_items}")
 
 if __name__ == "__main__":
     main()
