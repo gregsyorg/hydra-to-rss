@@ -1,9 +1,7 @@
 import json
-import urllib.request
-import ssl
+import subprocess
 from xml.etree.ElementTree import Element, SubElement, tostring
 from xml.dom import minidom
-from xml.sax.saxutils import escape
 
 # Lista de fuentes JSON
 JSON_URLS = [
@@ -14,21 +12,25 @@ JSON_URLS = [
 ]
 
 def get_json_data(url):
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        'Accept': 'application/json, text/plain, */*',
-        'Accept-Language': 'en-US,en;q=0.9'
-    }
+    # Usar curl de Linux/GitHub Actions para bypass de Cloudflare 403
+    command = [
+        "curl",
+        "-s",
+        "-L",
+        "-A", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "-H", "Accept: application/json, text/plain, */*",
+        "-H", "Accept-Language: en-US,en;q=0.9",
+        "-H", "Sec-Fetch-Dest: empty",
+        "-H", "Sec-Fetch-Mode: cors",
+        "-H", "Sec-Fetch-Site: cross-site",
+        url
+    ]
     
-    # Crear un contexto SSL que no verifique certificados estrictos si falla la cadena en GitHub Actions
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
-
-    req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req, context=ctx, timeout=20) as response:
-        content = response.read().decode('utf-8')
-        return json.loads(content)
+    result = subprocess.run(command, capture_output=True, text=True, check=True)
+    if not result.stdout.strip():
+        raise Exception("Respuesta vacía al descargar JSON")
+        
+    return json.loads(result.stdout)
 
 def main():
     rss = Element('rss', version='2.0')
@@ -62,16 +64,12 @@ def main():
 
                 rss_item = SubElement(channel, 'item')
                 
-                # Título limpio y escapado
                 raw_title = item.get('title', 'Sin titulo')
                 title_text = f"[{source_name}] {raw_title}"
                 
                 SubElement(rss_item, 'title').text = title_text
-                
-                # Enclosure con el magnet
                 SubElement(rss_item, 'enclosure', url=str(magnet_url), type='application/x-bittorrent')
                 
-                # Fecha
                 if 'uploadDate' in item:
                     SubElement(rss_item, 'pubDate').text = str(item['uploadDate'])
 
