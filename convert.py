@@ -1,20 +1,20 @@
-#!/usr/bin/env python3
+#!/usr/init/env python3
 """
 Genera un feed RSS 2.0 (feed.xml) a partir de fuentes JSON de HydraLinks
-utilizando los endpoints oficiales de la API.
+utilizando un proxy público para evitar por completo el bloqueo de Cloudflare.
 """
 
 import json
 import sys
 import urllib.request
+import urllib.parse
 from datetime import datetime, timezone
 from email.utils import format_datetime, parsedate_to_datetime
 from xml.sax.saxutils import escape
 
 OUTPUT_FILE = "feed.xml"
 
-# Endpoints oficiales de las fuentes en la API de Hydra
-JSON_URLS = [
+ORIGINAL_JSON_URLS = [
     "https://hydralinks.cloud/sources/onlinefix.json",
     "https://hydralinks.cloud/sources/fitgirl.json",
     "https://hydralinks.cloud/sources/dodi.json",
@@ -23,20 +23,20 @@ JSON_URLS = [
 
 
 def fetch_json(url):
-    # Usamos cloudscraper si está disponible, o urllib estándar con headers de navegador
-    try:
-        import cloudscraper
-        scraper = cloudscraper.create_scraper(browser={'browser': 'chrome', 'platform': 'windows', 'desktop': True})
-        response = scraper.get(url, timeout=30)
-        response.raise_for_status()
-        return response.json()
-    except ImportError:
-        req = urllib.request.Request(
-            url, 
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-        )
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+    # Usamos allorigins como proxy para saltarnos el bloqueo 403 de Cloudflare en GitHub Actions
+    proxy_url = f"https://api.allorigins.win/raw?url={urllib.parse.quote(url)}"
+    
+    req = urllib.request.Request(
+        proxy_url,
+        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        content = resp.read().decode("utf-8")
+        # allorigins envuelve a veces la respuesta en JSON o la devuelve directa, manejamos ambos casos
+        data = json.loads(content)
+        if isinstance(data, dict) and "contents" in data and isinstance(data["contents"], str):
+            return json.loads(data["contents"])
+        return data
 
 
 def to_rfc822(value):
@@ -152,7 +152,7 @@ def render_feed(items):
 
 
 def main():
-    items = collect_items(JSON_URLS)
+    items = collect_items(ORIGINAL_JSON_URLS)
     
     if not items:
         print("[aviso] No se encontraron items.")
