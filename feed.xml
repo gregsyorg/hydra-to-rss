@@ -1,8 +1,9 @@
-<?xml version="1.0" ?>
+<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
   <channel>
-    <title>Hydra Links RSS</title>
-    <link>https://github.com/gregsyorg/hydra-to-rss</link>
-    <description>Feed RSS de juegos de Hydra Links</description>
+    <title>HydraLinks Magnet RSS Feed</title>
+    <link>https://hydralinks.cloud/</link>
+    <description>Feed generado automáticamente con enlaces Magnet</description>
+    <lastBuildDate>Tue, 21 Jul 2026 22:44:23 +0000</lastBuildDate>
   </channel>
 </rss>
