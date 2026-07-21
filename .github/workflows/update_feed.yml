@@ -18,6 +18,9 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Instalar dependencias
+        run: pip install cloudscraper
+
       - name: Generar feed.xml
         run: python convert.py
 
